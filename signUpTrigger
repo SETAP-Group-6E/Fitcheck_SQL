@@ -1,0 +1,43 @@
+create unique index if not exists user_user_id_key
+on public."user" (user_id);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public."user" (
+    user_id,
+    username,
+    email,
+    bio,
+    profile_pic_url
+  )
+  values (
+    new.id,
+    coalesce(
+      nullif(new.raw_user_meta_data ->> 'username', ''),
+      split_part(coalesce(new.email, ''), '@', 1),
+      'user'
+    ),
+    coalesce(new.email, ''),
+    '',
+    ''
+  )
+  on conflict (user_id) do update
+    set
+      username = excluded.username,
+      email = excluded.email;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
